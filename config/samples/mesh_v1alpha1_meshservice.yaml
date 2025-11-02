@@ -1,0 +1,9 @@
+apiVersion: mesh.istio.operator/v1alpha1
+kind: MeshService
+metadata:
+  labels:
+    app.kubernetes.io/name: istio-integrity-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: meshservice-sample
+spec:
+  # TODO(user): Add fields here
