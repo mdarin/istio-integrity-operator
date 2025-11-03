@@ -1,0 +1,78 @@
+# config/samples/mesh_v1alpha1_meshservice-dr.yaml
+apiVersion: mesh.istio.operator/v1alpha1
+kind: MeshService
+metadata:
+  name: payment-service
+  namespace: payments
+spec:
+  serviceName: payment-processor
+  namespace: payments
+
+  ports:
+  - name: https
+    port: 443
+    targetPort: 8443
+    protocol: TLS
+
+  hosts:
+  - "payments.company.com"
+
+  gateway:
+    name: secure-gateway
+    namespace: istio-system
+
+  # DestinationRule specific configuration
+  destinationRule:
+    trafficPolicy:
+      tls:
+        mode: ISTIO_MUTUAL
+      connectionPool:
+        tcp:
+          maxConnections: 1000
+          connectTimeout: 30s
+        http:
+          http2MaxRequests: 1000
+          maxRequestsPerConnection: 10
+          maxRetries: 3
+      outlierDetection:
+        consecutive5xxErrors: 10
+        interval: 5m
+        baseEjectionTime: 5m
+        maxEjectionPercent: 20
+
+    subsets:
+    - name: v1
+      labels:
+        version: v1.5.0
+      trafficPolicy:
+        loadBalancer:
+          simple: LEAST_CONN
+    - name: v2
+      labels:
+        version: v1.6.0
+      trafficPolicy:
+        loadBalancer:
+          simple: ROUND_ROBIN
+
+  # mTLS configuration
+  peerAuthentication:
+    mtls:
+      mode: STRICT
+
+  # Authorization policies
+  authorization:
+    rules:
+    - from:
+      - source:
+          principals: [ "cluster.local/ns/default/sa/frontend-sa" ]
+      to:
+      - operation:
+          methods: [ "GET", "POST" ]
+          paths: [ "/api/v1/payments" ]
+    - from:
+      - source:
+          namespaces: [ "monitoring" ]
+      to:
+      - operation:
+          methods: [ "GET" ]
+          paths: [ "/metrics" ]

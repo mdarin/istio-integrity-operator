@@ -1,0 +1,112 @@
+# config/samples/mesh_v1alpha1_meshservice-complex.yaml
+apiVersion: mesh.istio.operator/v1alpha1
+kind: MeshService
+metadata:
+  name: ecommerce-platform
+  namespace: ecommerce
+  labels:
+    app.kubernetes.io/name: istio-integrity-operator
+    app.kubernetes.io/managed-by: kustomize
+  annotations:
+    mesh.operator.istio.io/description: "E-commerce platform main service"
+    mesh.operator.istio.io/team: "platform-team"
+spec:
+  serviceName: ecommerce-frontend
+  namespace: ecommerce
+
+  ports:
+  - name: web
+    port: 443
+    targetPort: 8443
+    protocol: TCP
+  - name: grpc
+    port: 50051
+    targetPort: 50051
+    protocol: TCP
+  # Multiple hosts with different routing
+  hosts:
+  - "shop.company.com"
+  - "api.company.com"
+  - "internal.company.com"
+
+  gateway:
+    name: edge-gateway
+    namespace: istio-system
+
+  # Advanced traffic management
+  trafficPolicy:
+    loadBalancer:
+      consistentHash:
+        httpHeaderName: "x-user-id"
+    tls:
+      mode: MUTUAL
+      clientCertificate: /etc/certs/client.crt
+      privateKey: /etc/certs/client.key
+      caCertificates: /etc/certs/ca.crt
+
+  # Multiple subsets for different regions
+  subsets:
+  - name: us-west
+    labels:
+      region: us-west
+      version: v2.1.0
+    weight: 40
+    trafficPolicy:
+      loadBalancer:
+        localityLbSetting:
+          enabled: true
+          failover:
+          - from: us-west
+            to: us-east
+  - name: us-east
+    labels:
+      region: us-east
+      version: v2.1.0
+    weight: 40
+  - name: eu-central
+    labels:
+      region: eu-central
+      version: v2.0.0
+    weight: 20
+  # Fault injection for testing
+  fault:
+    delay:
+      percentage:
+        value: 5.0
+      fixedDelay: 3s
+    abort:
+      percentage:
+        value: 2.0
+      httpStatus: 503
+
+  # Mirroring traffic for testing
+  mirror:
+    host: ecommerce-frontend-staging.ecommerce.svc.cluster.local
+    subset: staging
+    percentage:
+      value: 10.0
+
+  # Headers manipulation
+  headers:
+    request:
+      set:
+        x-api-version: "v2"
+        x-region: "global"
+      remove:
+      - "x-debug-token"
+    response:
+      set:
+        x-powered-by: "istio-operator"
+      remove:
+      - "server"
+
+  # Service entry for external services
+  serviceEntries:
+  - hosts:
+    - "payment-gateway.external.com"
+    ports:
+    - number: 443
+      name: https
+      protocol: TLS
+    resolution: DNS
+    location: MESH_EXTERNAL

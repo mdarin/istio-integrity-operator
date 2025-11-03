@@ -1,0 +1,192 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.17.2
+  name: meshservices.mesh.istio.operator
+spec:
+  group: mesh.istio.operator
+  names:
+    kind: MeshService
+    listKind: MeshServiceList
+    plural: meshservices
+    singular: meshservice
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: MeshService is the Schema for the meshservices API.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: MeshServiceSpec defines the desired state of MeshService
+            properties:
+              gateway:
+                description: Gateway reference
+                properties:
+                  name:
+                    type: string
+                  namespace:
+                    type: string
+                required:
+                - name
+                - namespace
+                type: object
+              hosts:
+                description: Hosts for the VirtualService
+                items:
+                  type: string
+                type: array
+              namespace:
+                description: Namespace where the service is deployed
+                type: string
+              ports:
+                description: Ports defines the service ports
+                items:
+                  properties:
+                    name:
+                      type: string
+                    port:
+                      format: int32
+                      type: integer
+                    protocol:
+                      type: string
+                    targetPort:
+                      format: int32
+                      type: integer
+                  required:
+                  - name
+                  - port
+                  - protocol
+                  - targetPort
+                  type: object
+                type: array
+              serviceName:
+                description: ServiceName is the name of the Kubernetes Service
+                type: string
+              subsets:
+                description: Subsets for destination rules
+                items:
+                  properties:
+                    labels:
+                      additionalProperties:
+                        type: string
+                      type: object
+                    name:
+                      type: string
+                    weight:
+                      format: int32
+                      type: integer
+                  required:
+                  - labels
+                  - name
+                  type: object
+                type: array
+              trafficPolicy:
+                description: Traffic policy settings
+                properties:
+                  loadBalancer:
+                    properties:
+                      simple:
+                        type: string
+                    type: object
+                type: object
+            required:
+            - gateway
+            - hosts
+            - namespace
+            - ports
+            - serviceName
+            type: object
+          status:
+            description: MeshServiceStatus defines the observed state of MeshService
+            properties:
+              consistencyState:
+                description: Consistency state of the mesh resources
+                type: string
+              lastChecked:
+                description: Last time the consistency check was performed
+                format: date-time
+                type: string
+              managedResources:
+                description: Related resources managed by this operator
+                items:
+                  properties:
+                    kind:
+                      type: string
+                    name:
+                      type: string
+                    namespace:
+                      type: string
+                    version:
+                      type: string
+                  required:
+                  - kind
+                  - name
+                  - namespace
+                  type: object
+                type: array
+              repairActions:
+                description: Repair actions performed or pending
+                items:
+                  properties:
+                    action:
+                      type: string
+                    reason:
+                      type: string
+                    resource:
+                      type: string
+                    type:
+                      type: string
+                  required:
+                  - action
+                  - reason
+                  - resource
+                  - type
+                  type: object
+                type: array
+              violations:
+                description: Violations found during consistency check
+                items:
+                  properties:
+                    message:
+                      type: string
+                    resource:
+                      type: string
+                    severity:
+                      type: string
+                    type:
+                      type: string
+                  required:
+                  - message
+                  - resource
+                  - severity
+                  - type
+                  type: object
+                type: array
+            required:
+            - consistencyState
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
