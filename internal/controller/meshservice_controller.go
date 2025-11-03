@@ -26,7 +26,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	meshv1alpha1 "github.com/mdarin/istio-integrity-operator/api/v1alpha1"
-	"github.com/mdarin/istio-integrity-operator/internal/controller/integrity"
+	"github.com/mdarin/istio-integrity-operator/internal/integrity"
 )
 
 // MeshServiceReconciler reconciles a MeshService object
