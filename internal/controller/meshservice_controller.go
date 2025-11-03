@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -154,6 +155,15 @@ func (r *MeshServiceReconciler) updateStatusWithError(ctx context.Context, meshS
 		},
 	}
 	return r.Status().Update(ctx, meshService)
+}
+
+// from "frontend.default.svc.cluster.local" → ("frontend", "default")
+func parseFQDN(host string) (name, namespace string, ok bool) {
+	parts := strings.Split(host, ".")
+	if len(parts) >= 3 && parts[len(parts)-3] == "svc" {
+		return parts[0], parts[1], true
+	}
+	return "", "", false
 }
 
 // SetupWithManager sets up the controller with the Manager.

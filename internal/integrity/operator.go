@@ -164,8 +164,7 @@ func (o *SQLiteIntegrityOperator) createSchema(db *sql.DB) error {
         host TEXT NOT NULL, 
         port INTEGER NOT NULL,
         protocol TEXT NOT NULL,
-        PRIMARY KEY (namespace, name),
-		UNIQUE (host)  -- ВАЖНО: unique constraint для одиночного поля host
+        PRIMARY KEY (namespace, name)
     );
 
     CREATE TABLE IF NOT EXISTS gateways (
@@ -200,16 +199,18 @@ func (o *SQLiteIntegrityOperator) createSchema(db *sql.DB) error {
         PRIMARY KEY (namespace, name),
         FOREIGN KEY (service_namespace, service_name) 
             REFERENCES services(namespace, name) ON DELETE CASCADE
-		FOREIGN KEY (host) 
-            REFERENCES services(host) ON DELETE CASCADE
     );
 
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_services_host_port 
-        ON services(host, port);
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_vs_host_gateway 
+    CREATE INDEX IF NOT EXISTS idx_vs_host_gateway 
         ON virtual_services(host, gateway_namespace, gateway_name);
-	CREATE UNIQUE INDEX IF NOT EXISTS idx_services_host_unique 
-		ON services(host);
+	CREATE INDEX IF NOT EXISTS idx_services_host_port 
+		ON services(host, port);
+	CREATE INDEX IF NOT EXISTS idx_services_ns_name 
+		ON services(namespace, name);
+	CREATE INDEX IF NOT EXISTS idx_vs_svc_ref 
+		ON virtual_services(service_namespace, service_name);
+	CREATE INDEX IF NOT EXISTS idx_vs_host_gw 
+		ON virtual_services(host, gateway_namespace, gateway_name);
     `
 
 	_, err := db.Exec(schema)
@@ -217,11 +218,6 @@ func (o *SQLiteIntegrityOperator) createSchema(db *sql.DB) error {
 }
 
 func (o *SQLiteIntegrityOperator) loadData(db *sql.DB, model *RelationalModel) error {
-	// Временно отключаем FK для загрузки
-	// ✅ Позволяет загружать все данные
-	// ✅ Позволяет потом проверять целостность через CheckIntegrity
-	// ✅ Более реалистично имитирует реальный workflow оператора
-	// ✅ Избегает паники из-за nil pointer
 	if _, err := db.Exec("PRAGMA foreign_keys = OFF"); err != nil {
 		return fmt.Errorf("failed to disable foreign keys: %w", err)
 	}
@@ -235,7 +231,7 @@ func (o *SQLiteIntegrityOperator) loadData(db *sql.DB, model *RelationalModel) e
 	// Загружаем данные и собираем ВСЕ нарушения
 	for _, gw := range model.Gateways {
 		if _, err := tx.Exec(
-			"INSERT OR REPLACE INTO gateways (namespace, name) VALUES (?, ?)",
+			"INSERT INTO gateways (namespace, name) VALUES (?, ?)",
 			gw.Namespace, gw.Name,
 		); err != nil {
 			return err
@@ -244,7 +240,7 @@ func (o *SQLiteIntegrityOperator) loadData(db *sql.DB, model *RelationalModel) e
 
 	for _, svc := range model.Services {
 		if _, err := tx.Exec(
-			"INSERT OR REPLACE INTO services (namespace, name, host, port, protocol) VALUES (?, ?, ?, ?, ?)",
+			"INSERT INTO services (namespace, name, host, port, protocol) VALUES (?, ?, ?, ?, ?)",
 			svc.Namespace, svc.Name, svc.Host, svc.Port, svc.Protocol,
 		); err != nil {
 			return err
@@ -253,7 +249,7 @@ func (o *SQLiteIntegrityOperator) loadData(db *sql.DB, model *RelationalModel) e
 
 	for _, vs := range model.VirtualServices {
 		if _, err := tx.Exec(
-			"INSERT OR REPLACE INTO virtual_services (namespace, name, gateway_namespace, gateway_name, host, service_namespace, service_name) VALUES (?, ?, ?, ?, ?, ?, ?)",
+			"INSERT INTO virtual_services (namespace, name, gateway_namespace, gateway_name, host, service_namespace, service_name) VALUES (?, ?, ?, ?, ?, ?, ?)",
 			vs.Namespace, vs.Name, vs.GatewayNamespace, vs.GatewayName, vs.Host, vs.ServiceNamespace, vs.ServiceName,
 		); err != nil {
 			return err
@@ -262,7 +258,7 @@ func (o *SQLiteIntegrityOperator) loadData(db *sql.DB, model *RelationalModel) e
 
 	for _, dr := range model.DestinationRules {
 		if _, err := tx.Exec(
-			"INSERT OR REPLACE INTO destination_rules (namespace, name, host, subsets, service_namespace, service_name) VALUES (?, ?, ?, ?, ?, ?)",
+			"INSERT INTO destination_rules (namespace, name, host, subsets, service_namespace, service_name) VALUES (?, ?, ?, ?, ?, ?)",
 			dr.Namespace, dr.Name, dr.Host, dr.Subsets, dr.ServiceNamespace, dr.ServiceName,
 		); err != nil {
 			return err
@@ -282,33 +278,34 @@ func (o *SQLiteIntegrityOperator) loadData(db *sql.DB, model *RelationalModel) e
 	return nil
 }
 
-// CheckIntegrity performs referential integrity checks
+// CheckIntegrity performs comprehensive referential and uniqueness integrity checks
 func (o *SQLiteIntegrityOperator) CheckIntegrity(db *sql.DB) (*IntegrityReport, error) {
 	report := &IntegrityReport{IsConsistent: true}
 
-	// Check foreign key violations
+	// 1. Check foreign key violations
 	fkViolations, err := o.checkForeignKeyViolations(db)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to check foreign key violations: %w", err)
 	}
 	report.Violations = append(report.Violations, fkViolations...)
 
-	// Check unique constraint violations
+	// 2. Check unique constraint violations
 	uniqueViolations, err := o.checkUniqueConstraintViolations(db)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to check unique constraint violations: %w", err)
 	}
 	report.Violations = append(report.Violations, uniqueViolations...)
 
+	// Final consistency flag
 	report.IsConsistent = len(report.Violations) == 0
-
 	return report, nil
 }
 
+// checkForeignKeyViolations проверяет все логические ссылки
 func (o *SQLiteIntegrityOperator) checkForeignKeyViolations(db *sql.DB) ([]meshv1alpha1.ConstraintViolation, error) {
 	var violations []meshv1alpha1.ConstraintViolation
 
-	// Check VirtualService -> Gateway references
+	// 1. VirtualService -> Gateway
 	rows, err := db.Query(`
 		SELECT vs.namespace, vs.name, vs.gateway_namespace, vs.gateway_name
 		FROM virtual_services vs
@@ -318,11 +315,10 @@ func (o *SQLiteIntegrityOperator) checkForeignKeyViolations(db *sql.DB) ([]meshv
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
 	for rows.Next() {
 		var ns, name, gwNs, gwName string
 		if err := rows.Scan(&ns, &name, &gwNs, &gwName); err != nil {
+			rows.Close()
 			return nil, err
 		}
 		violations = append(violations, meshv1alpha1.ConstraintViolation{
@@ -332,14 +328,80 @@ func (o *SQLiteIntegrityOperator) checkForeignKeyViolations(db *sql.DB) ([]meshv
 			Severity: "Error",
 		})
 	}
+	rows.Close()
+
+	// 2. VirtualService -> Service
+	rows, err = db.Query(`
+		SELECT vs.namespace, vs.name, vs.service_namespace, vs.service_name
+		FROM virtual_services vs
+		LEFT JOIN services s ON vs.service_namespace = s.namespace AND vs.service_name = s.name
+		WHERE s.namespace IS NULL
+	`)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var ns, name, svcNs, svcName string
+		if err := rows.Scan(&ns, &name, &svcNs, &svcName); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		violations = append(violations, meshv1alpha1.ConstraintViolation{
+			Type:     "ForeignKeyViolation",
+			Resource: fmt.Sprintf("VirtualService/%s/%s", ns, name),
+			Message:  fmt.Sprintf("References non-existent Service/%s/%s", svcNs, svcName),
+			Severity: "Error",
+		})
+	}
+	rows.Close()
+
+	// 3. DestinationRule -> Service (by namespace/name)
+	rows, err = db.Query(`
+		SELECT dr.namespace, dr.name, dr.service_namespace, dr.service_name
+		FROM destination_rules dr
+		LEFT JOIN services s ON dr.service_namespace = s.namespace AND dr.service_name = s.name
+		WHERE s.namespace IS NULL
+	`)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var ns, name, svcNs, svcName string
+		if err := rows.Scan(&ns, &name, &svcNs, &svcName); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		violations = append(violations, meshv1alpha1.ConstraintViolation{
+			Type:     "ForeignKeyViolation",
+			Resource: fmt.Sprintf("DestinationRule/%s/%s", ns, name),
+			Message:  fmt.Sprintf("References non-existent Service/%s/%s", svcNs, svcName),
+			Severity: "Error",
+		})
+	}
+	rows.Close()
+
+	// 4. (Опционально) DestinationRule -> Service by host?
+	// ❌ Рекомендуется УДАЛИТЬ из схемы FOREIGN KEY (host) REFERENCES services(host)
+	// Потому что host — не ключ, и может быть несколько сервисов с одним host? (в норме — нет)
+	// Но если вы всё же хотите проверить:
+	/*
+		rows, err = db.Query(`
+			SELECT dr.namespace, dr.name, dr.host
+			FROM destination_rules dr
+			LEFT JOIN services s ON dr.host = s.host
+			WHERE s.host IS NULL
+		`)
+		... аналогично ...
+	*/
 
 	return violations, nil
 }
 
+// checkUniqueConstraintViolations проверяет все важные уникальности
 func (o *SQLiteIntegrityOperator) checkUniqueConstraintViolations(db *sql.DB) ([]meshv1alpha1.ConstraintViolation, error) {
 	var violations []meshv1alpha1.ConstraintViolation
 
-	// Check for duplicate host:port combinations
+	// 1. Дубликаты host:port в services
 	rows, err := db.Query(`
 		SELECT host, port, COUNT(*) as count
 		FROM services
@@ -349,13 +411,12 @@ func (o *SQLiteIntegrityOperator) checkUniqueConstraintViolations(db *sql.DB) ([
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
 	for rows.Next() {
 		var host string
 		var port int32
 		var count int
 		if err := rows.Scan(&host, &port, &count); err != nil {
+			rows.Close()
 			return nil, err
 		}
 		violations = append(violations, meshv1alpha1.ConstraintViolation{
@@ -365,6 +426,62 @@ func (o *SQLiteIntegrityOperator) checkUniqueConstraintViolations(db *sql.DB) ([
 			Severity: "Error",
 		})
 	}
+	rows.Close()
+
+	// 2. Дубликаты host в services (если важно)
+	rows, err = db.Query(`
+		SELECT host, COUNT(*) as count
+		FROM services
+		GROUP BY host
+		HAVING COUNT(*) > 1
+	`)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var host string
+		var count int
+		if err := rows.Scan(&host, &count); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		// Проверим, не дублируется ли уже по host:port — чтобы не дублировать сообщение
+		// Но если вы НЕ проверяете host:port, или если порты разные — это отдельная ошибка
+		violations = append(violations, meshv1alpha1.ConstraintViolation{
+			Type:     "UniqueConstraintViolation",
+			Resource: fmt.Sprintf("Service/* (host: %s)", host),
+			Message:  fmt.Sprintf("Multiple services share the same host: %s (%d services)", host, count),
+			Severity: "Warning", // или "Error", в зависимости от политики
+		})
+	}
+	rows.Close()
+
+	// 3. Дубликаты (host, gateway) в virtual_services
+	// В Istio: один host на gateway должен обслуживаться одним VirtualService
+	rows, err = db.Query(`
+		SELECT host, gateway_namespace, gateway_name, COUNT(*) as count
+		FROM virtual_services
+		GROUP BY host, gateway_namespace, gateway_name
+		HAVING COUNT(*) > 1
+	`)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var host, gwNs, gwName string
+		var count int
+		if err := rows.Scan(&host, &gwNs, &gwName, &count); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		violations = append(violations, meshv1alpha1.ConstraintViolation{
+			Type:     "UniqueConstraintViolation",
+			Resource: fmt.Sprintf("VirtualService/* (host: %s, gateway: %s/%s)", host, gwNs, gwName),
+			Message:  fmt.Sprintf("Multiple VirtualServices define the same host %s for Gateway %s/%s (%d vs)", host, gwNs, gwName, count),
+			Severity: "Error",
+		})
+	}
+	rows.Close()
 
 	return violations, nil
 }

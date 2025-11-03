@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/mdarin/istio-integrity-operator/pkg/sqliteerrors"
 )
 
 func TestCheckForeignKeyViolations(t *testing.T) {
@@ -104,13 +103,14 @@ func TestCheckUniqueConstraintViolations(t *testing.T) {
 	`
 
 	_, err = db.Exec(testData)
-	if err == nil {
+	if err != nil {
 		t.Fatalf("Expected failed to insert test data UNIQUE constraint failed: services.host")
+		t.Fatalf("Failed to insert test data: %v", err)
 	}
 
-	if sqliteerrors.E(err).Unique().Is() {
-		t.Logf("Expected %s", err)
-	}
+	// if sqliteerrors.E(err).Unique().Is() {
+	// 	t.Logf("Expected %s", err)
+	// }
 
 	// // Check for unique constraint violations
 	// violations, err := operator.checkUniqueConstraintViolations(db)

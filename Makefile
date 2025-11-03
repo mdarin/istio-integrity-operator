@@ -41,6 +41,12 @@ help: ## Display this help.
 
 ##@ Development
 
+# Test SQLite Integrity Operator 
+.PHONY: test-integrity
+test-integrity:
+	go clean -testcache
+	go test ./internal/integrity/... -v 
+
 # Install SQLite dependencies
 .PHONY: deps
 deps:
