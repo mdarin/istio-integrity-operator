@@ -47,10 +47,24 @@ var _ = Describe("MeshService Controller", func() {
 			err := k8sClient.Get(ctx, typeNamespacedName, meshservice)
 			if err != nil && errors.IsNotFound(err) {
 				resource := &meshv1alpha1.MeshService{
+					TypeMeta: metav1.TypeMeta{
+						Kind:       "MeshService",
+						APIVersion: "mesh.istio.operator/v1alpha1",
+					},
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      resourceName,
 						Namespace: "default",
 					},
+					Spec: meshv1alpha1.MeshServiceSpec{
+						ServiceName: "webapp",
+						Hosts:       []string{"webapp.example.com"},
+						Gateway: meshv1alpha1.GatewayReference{
+							Name:      "public-gateway",
+							Namespace: "istio-system",
+						},
+						Ports: []meshv1alpha1.ServicePort{{Port: 80, TargetPort: 8080}},
+					},
+
 					// TODO(user): Specify other spec details if needed.
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
