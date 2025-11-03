@@ -23,19 +23,109 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
-// MeshServiceSpec defines the desired state of MeshService.
+// MeshServiceSpec defines the desired state of MeshService
 type MeshServiceSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	// Foo is an example field of MeshService. Edit meshservice_types.go to remove/update
-	Foo string `json:"foo,omitempty"`
+	// ServiceName is the name of the Kubernetes Service
+	ServiceName string `json:"serviceName"`
+
+	// Namespace where the service is deployed
+	Namespace string `json:"namespace"`
+
+	// Ports defines the service ports
+	Ports []ServicePort `json:"ports"`
+
+	// Hosts for the VirtualService
+	Hosts []string `json:"hosts"`
+
+	// Gateway reference
+	Gateway GatewayReference `json:"gateway"`
+
+	// Traffic policy settings
+	TrafficPolicy *TrafficPolicy `json:"trafficPolicy,omitempty"`
+
+	// Subsets for destination rules
+	Subsets []Subset `json:"subsets,omitempty"`
 }
 
-// MeshServiceStatus defines the observed state of MeshService.
+type ServicePort struct {
+	Name       string `json:"name"`
+	Port       int32  `json:"port"`
+	TargetPort int32  `json:"targetPort"`
+	Protocol   string `json:"protocol"`
+}
+
+type GatewayReference struct {
+	Name      string `json:"name"`
+	Namespace string `json:"namespace"`
+}
+
+type TrafficPolicy struct {
+	LoadBalancer *LoadBalancerSettings `json:"loadBalancer,omitempty"`
+}
+
+type LoadBalancerSettings struct {
+	Simple string `json:"simple,omitempty"` // ROUND_ROBIN, LEAST_CONN, etc.
+}
+
+type Subset struct {
+	Name   string            `json:"name"`
+	Labels map[string]string `json:"labels"`
+	Weight int32             `json:"weight,omitempty"`
+}
+
+// MeshServiceStatus defines the observed state of MeshService
 type MeshServiceStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
+
+	// Consistency state of the mesh resources
+	ConsistencyState ConsistencyState `json:"consistencyState"`
+
+	// Last time the consistency check was performed
+	LastChecked metav1.Time `json:"lastChecked,omitempty"`
+
+	// Violations found during consistency check
+	Violations []ConstraintViolation `json:"violations,omitempty"`
+
+	// Repair actions performed or pending
+	RepairActions []RepairAction `json:"repairActions,omitempty"`
+
+	// Related resources managed by this operator
+	ManagedResources []ManagedResource `json:"managedResources,omitempty"`
+}
+
+type ConsistencyState string
+
+const (
+	Consistent    ConsistencyState = "Consistent"
+	Inconsistent  ConsistencyState = "Inconsistent"
+	RepairPending ConsistencyState = "RepairPending"
+	RepairFailed  ConsistencyState = "RepairFailed"
+	Checking      ConsistencyState = "Checking"
+)
+
+type ConstraintViolation struct {
+	Type     string `json:"type"`
+	Resource string `json:"resource"`
+	Message  string `json:"message"`
+	Severity string `json:"severity"` // Error, Warning
+}
+
+type RepairAction struct {
+	Type     string `json:"type"`
+	Resource string `json:"resource"`
+	Action   string `json:"action"`
+	Reason   string `json:"reason"`
+}
+
+type ManagedResource struct {
+	Kind      string `json:"kind"`
+	Name      string `json:"name"`
+	Namespace string `json:"namespace"`
+	Version   string `json:"version,omitempty"`
 }
 
 // +kubebuilder:object:root=true

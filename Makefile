@@ -41,6 +41,16 @@ help: ## Display this help.
 
 ##@ Development
 
+# Install SQLite dependencies
+.PHONY: deps
+deps:
+	go get github.com/mattn/go-sqlite3
+
+# Run with SQLite support
+.PHONY: run-with-sqlite
+run-with-sqlite: deps manifests generate fmt vet
+	go run ./main.go
+
 .PHONY: manifests
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
